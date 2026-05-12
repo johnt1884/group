@@ -141,7 +141,8 @@ function _updatePreview() {
     }).sort((a,b) => a.g - b.g || a.i - b.i);
 
     const firstItem = sortedSelection[0];
-    const itemValue = firstItem.val ? firstItem.val.text : null;
+    if (!firstItem || !firstItem.val) return;
+    const itemValue = firstItem.val.text;
 
     if (!itemValue) return;
 
@@ -790,45 +791,54 @@ function render() {
 
             div.ondrop = e => {
                 e.stopPropagation();
+
                 div.style.borderTop = '1px solid #ddd';
                 div.style.borderBottom = '1px solid #ddd';
-                
+
                 const multiData = e.dataTransfer.getData('items-multi');
-                if (multiData) {
-                    const itemsToMove = JSON.parse(multiData);
-                    // Crucial: preserve document order during move
-                    itemsToMove.sort((a,b) => a.g - b.g || a.i - b.i);
-                    const values = itemsToMove.map(m => m.val);
+                if (!multiData) return;
 
-                    // Remove items from groups (descending to avoid index shift)
-                    const itemsToRemove = [...itemsToMove].sort((a,b) => b.g - a.g || b.i - a.i);
-                    itemsToRemove.forEach(m => groups[m.g].items.splice(m.i, 1));
-                    
-                    // Find where to insert
-                    const rect = div.getBoundingClientRect();
-                    const relY = e.clientY - rect.top;
-                    let insertAfter = relY >= rect.height / 2;
-                    
-                    // The iIndex might have shifted if we removed items from the SAME group before this item.
-                    // We'll use the unique ID to find its new index.
-                    let currentTargetIdx = groups[gIndex].items.findIndex(i => i.id === item.id);
-                    
-                    if (currentTargetIdx === -1) {
-                        // fallback to original iIndex adjusted for removals in same group
-                        let countBefore = 0;
-                        itemsToMove.forEach(m => {
-                            if (m.g === gIndex && m.i < iIndex) countBefore++;
-                        });
-                        currentTargetIdx = iIndex - countBefore;
-                    }
+                const itemsToMove = JSON.parse(multiData);
 
-                    if (insertAfter) currentTargetIdx++;
-                    groups[gIndex].items.splice(currentTargetIdx, 0, ...values);
-                    
-                    selectedIndices.clear();
-                    render();
-                    updatePreview();
+                itemsToMove.sort((a,b) => a.g - b.g || a.i - b.i);
+
+                // FIND TARGET POSITION BEFORE REMOVAL
+                const rect = div.getBoundingClientRect();
+                const relY = e.clientY - rect.top;
+                const insertAfter = relY >= rect.height / 2;
+
+                let targetIndex = iIndex;
+                if (insertAfter) targetIndex++;
+
+                // Adjust target if moving within same group
+                const movingWithinSameGroup = itemsToMove.some(m => m.g === gIndex);
+
+                if (movingWithinSameGroup) {
+                    const removedBeforeTarget = itemsToMove.filter(
+                        m => m.g === gIndex && m.i < targetIndex
+                    ).length;
+
+                    targetIndex -= removedBeforeTarget;
                 }
+
+                // Store moved values
+                const values = itemsToMove.map(m => m.val);
+
+                // Remove descending
+                const itemsToRemove = [...itemsToMove]
+                    .sort((a,b) => b.g - a.g || b.i - a.i);
+
+                itemsToRemove.forEach(m => {
+                    groups[m.g].items.splice(m.i, 1);
+                });
+
+                // Insert
+                groups[gIndex].items.splice(targetIndex, 0, ...values);
+
+                selectedIndices.clear();
+
+                render();
+                updatePreview();
             };
 
             gDiv.appendChild(div);
