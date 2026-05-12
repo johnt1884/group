@@ -106,6 +106,10 @@ let items = [];
 let groups = [];
 let groupLimit = 6;
 
+function createItem(text) {
+    return { id: crypto.randomUUID(), text: text };
+}
+
 function updateGroupLimit() {
     const input = document.getElementById('groupLimitInput');
     let val = parseInt(input.value);
@@ -137,7 +141,7 @@ function _updatePreview() {
     }).sort((a,b) => a.g - b.g || a.i - b.i);
 
     const firstItem = sortedSelection[0];
-    const itemValue = firstItem.val;
+    const itemValue = firstItem.val ? firstItem.val.text : null;
 
     if (!itemValue) return;
 
@@ -372,7 +376,7 @@ function smartParse(rawLines) {
                 currentGroup = { name: 'TEMP', items: [], isCustom: false };
                 result.push(currentGroup);
             }
-            currentGroup.items.push(trimmed);
+            currentGroup.items.push(createItem(trimmed));
         }
     });
     return result;
@@ -434,7 +438,8 @@ function renumberGroups() {
 }
 
 function insertIntoGroup(gIndex, newItems) {
-    groups[gIndex].items = groups[gIndex].items.concat(newItems);
+    const itemsToAdd = newItems.map(text => createItem(text));
+    groups[gIndex].items = groups[gIndex].items.concat(itemsToAdd);
     rebalanceAll();
 }
 
@@ -517,8 +522,8 @@ function deleteItem(gIndex, iIndex) {
 }
 
 function convertToGroup(gIndex, iIndex) {
-    const itemName = groups[gIndex].items[iIndex];
-    groups.push({ name: itemName, items: [], isCustom: true });
+    const item = groups[gIndex].items[iIndex];
+    groups.push({ name: item.text, items: [], isCustom: true });
     groups[gIndex].items.splice(iIndex, 1);
     rebalanceAll();
 }
@@ -654,12 +659,16 @@ function render() {
                 itemsToRemove.forEach(m => groups[m.g].items.splice(m.i, 1));
 
                 groups[gIndex].items.push(...values);
-                rebalanceAll();
+                selectedIndices.clear();
+                render();
+                updatePreview();
             } else if (itemData) {
                 const {gIndex: fromG, iIndex: fromI} = JSON.parse(itemData);
                 const moved = groups[fromG].items.splice(fromI, 1)[0];
                 groups[gIndex].items.push(moved);
-                rebalanceAll();
+                selectedIndices.clear();
+                render();
+                updatePreview();
             }
         };
 
@@ -707,7 +716,7 @@ function render() {
 
             const textSpan = document.createElement('span');
             textSpan.className = 'item-text';
-            textSpan.textContent = item;
+            textSpan.textContent = item.text;
             div.appendChild(textSpan);
 
             const controls = document.createElement('div');
@@ -801,9 +810,8 @@ function render() {
                     let insertAfter = relY >= rect.height / 2;
                     
                     // The iIndex might have shifted if we removed items from the SAME group before this item.
-                    // We'll use the unique value 'item' to find its new index.
-                    // (Note: if names aren't unique, we might have slight jitter, but it's best we have).
-                    let currentTargetIdx = groups[gIndex].items.indexOf(item);
+                    // We'll use the unique ID to find its new index.
+                    let currentTargetIdx = groups[gIndex].items.findIndex(i => i.id === item.id);
                     
                     if (currentTargetIdx === -1) {
                         // fallback to original iIndex adjusted for removals in same group
@@ -818,7 +826,8 @@ function render() {
                     groups[gIndex].items.splice(currentTargetIdx, 0, ...values);
                     
                     selectedIndices.clear();
-                    rebalanceAll();
+                    render();
+                    updatePreview();
                 }
             };
 
@@ -838,7 +847,7 @@ function exportTxt() {
     let output = '';
     groups.forEach(g => {
         output += g.name + '\n';
-        g.items.forEach(i => output += i + '\n');
+        g.items.forEach(i => output += i.text + '\n');
         output += '\n';
     });
 
@@ -900,12 +909,13 @@ function exportHtml() {
 
     groups.forEach(group => {
         const escapedGroupName = escapeHtml(group.name);
-        const links = group.items.filter(i => i.startsWith('http'));
+        const links = group.items.filter(i => i.text.startsWith('http')).map(i => i.text);
 
         html += `    <h3>${escapedGroupName} <button onclick='openGroup(JSON.parse(this.dataset.links))' data-links='${escapeHtml(JSON.stringify(links))}'>Open All</button></h3>\n`;
         html += `    <ul>\n`;
 
-        group.items.forEach(link => {
+        group.items.forEach(item => {
+            const link = item.text;
             const escaped = escapeHtml(link);
             if (link.startsWith('http')) {
                 html += `        <li><a href="${escaped}" target="_blank">${escaped}</a></li>\n`;
